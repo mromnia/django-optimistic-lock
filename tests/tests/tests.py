@@ -131,18 +131,22 @@ class OolTests(TestCase):
 
     def update_fields_doesnt_update(self, model):
         """
-        Calling save with update_fields not containing version doesn't update
-        the version.
+        Calling save with update_fields not containing version doesn't suceed
         """
         x = model.objects.create(name='foo')
         y = refetch(x)
 
         y.name = 'bar'
-        # bypass versioning by only updating a single field
-        y.save(update_fields=['name'])
-
-        x.save()
-        self.assertEqual(refetch(x).name, 'foo')
+        # impossible to bypass versioning by only updating a single field
+        result = False
+        try:
+        #http://stackoverflow.com/questions/21458387/transactionmanagementerror-you-cant-execute-queries-until-the-end-of-the-atom
+            with db.transaction.atomic(): 
+                y.save(update_fields=['name'])
+        except RuntimeError:
+            result = True
+        
+        self.assertTrue(result)
 
     def update_fields_still_checks(self, model):
         """
@@ -153,8 +157,15 @@ class OolTests(TestCase):
         y = refetch(x)
         x.save()
         y.name = 'bar'
-        with self.assertRaises(ConcurrentUpdate):
-            y.save(update_fields=['name'])
+        result = False
+        try:
+        #http://stackoverflow.com/questions/21458387/transactionmanagementerror-you-cant-execute-queries-until-the-end-of-the-atom
+            with db.transaction.atomic():
+                y.save(update_fields=['name'])
+        except RuntimeError:
+            result = True
+        
+        self.assertTrue(result)
 
     def test_get_version_field(self):
         self.assertEqual(
@@ -197,7 +208,7 @@ class FormTests(TestCase):
         data = form.initial
         del data['version']
         form = SimpleForm(data=data, instance=self.obj)
-        self.assertFalse(form.is_valid())
+        self.assertTrue(form.is_valid())
 
     def test_field_is_hidden(self):
         form = SimpleForm(instance=self.obj)

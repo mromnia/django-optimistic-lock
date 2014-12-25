@@ -37,6 +37,7 @@ class VersionField(models.PositiveIntegerField):
 
     def __init__(self, *args, **kwargs):
         kwargs.setdefault('default', 0)
+        kwargs.setdefault('blank', True)
         super(VersionField, self).__init__(*args, **kwargs)
 
     def formfield(self, **kwargs):
@@ -68,18 +69,15 @@ class VersionedMixin(object):
 
         if isinstance(self.__class__.__dict__.get(version_field.attname), DeferredAttribute):
             # With a deferred VersionField, it's not possible to do any
-            # sensible concurrency checking, so throw an error. The
-            # other option would be to treat deferring the VersionField
-            # the same as excluding it from `update_fields` -- a way to
-            # bypass checking altogether.
+            # sensible concurrency checking, so throw an error. 
             raise RuntimeError("It doesn't make sense to save a model with a deferred VersionField")
 
         # pre_save may or may not have been called at this point, based on if
         # version_field is in update_fields. Since we need to reliably know the
         # old version, we can't increment there.
         old_version = version_field.value_from_object(self)
-        setattr(self, version_field.attname, old_version + 1)
-
+        
+        found_version_field = False
         # so increment it here instead. Now old_version is reliable.
         for i, value_tuple in enumerate(values):
             if isinstance(value_tuple[0], VersionField):
@@ -89,6 +87,12 @@ class VersionedMixin(object):
                     value_tuple[1],
                     value_tuple[2] + 1,
                 )
+                setattr(self, version_field.attname, old_version + 1)
+                found_version_field = True
+
+        if not found_version_field:
+        # cannot opt out of version checking
+            raise RuntimeError("Versioned models cannot be updated without version field")
 
         updated = super(VersionedMixin, self)._do_update(
             base_qs=base_qs.filter(**{version_field.attname: old_version}),
